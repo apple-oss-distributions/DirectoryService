@@ -3,8 +3,6 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -158,7 +156,12 @@ private:
 		void	DebugAPIPluginResponse			(	void		   *inData,
 													char		   *inDebugDataTag,
 													sInt32			inResult);
-
+		
+		static uInt32		AuditForThisEvent			( uInt32 inType, void *inData, char **outTextStr );
+		static tDirStatus   AuditUserOrGroupRecord		( tRecordReference inRecRef, char **outRecNameStr, char **outRecTypeStr, uInt32 *outEventCode );
+		static tDirStatus   AuditGetRecordRefInfo		( tRecordReference inRecRef, char **outRecNameStr, char **outRecTypeStr );
+		static tDirStatus   AuditGetNameFromAuthBuffer  ( tDataNodePtr inAuthMethod, tDataBufferPtr inAuthBuffer, char **outUserNameStr );
+		
 	CServerPlugin	   *fPluginPtr;
 	bool				bClosePort;
 };

@@ -3,8 +3,6 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -1726,6 +1724,9 @@ ni_status NiLib2::ValidateName( const char* user, ni_proplist *pl, ni_index prop
 		return NI_OK;
 	}
 
+	if ( prop_index == NI_INDEX_NULL )
+		return NI_OK;
+	
 	propkey = pl->nipl_val[prop_index].nip_name;
 	if (propkey == NULL)
 	{

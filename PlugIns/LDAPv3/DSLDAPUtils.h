@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,24 +22,19 @@
  */
 
 /*!
- * @header SMBAuth
+ * @header DSLDAPUtils
  */
 
-#ifndef __SMBAUTH_H__
-#define	__SMBAUTH_H__		1
-
-// utility functions prototypes
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-	void CalculateSMBNTHash(const char *utf8Password, unsigned char outHash[16]);
-	void CalculateSMBLANManagerHash(const char *password, unsigned char outHash[16]);
-	void CalculateP24(unsigned char *P21, unsigned char *C8, unsigned char *P24);
-	void DESEncode(void *str, void *data);
+
+void DSSearchCleanUp (	LDAP		   *inHost,
+						int				inMsgId );
+
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif

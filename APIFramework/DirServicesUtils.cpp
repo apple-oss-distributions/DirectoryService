@@ -3,8 +3,6 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -531,7 +529,7 @@ tDataListPtr dsBuildFromPath ( tDirReference	inDirRef,
 		inStr += delimLen;
 	}
 
-	while ( !done && (*inStr != nil) )
+	while ( !done && (*inStr != '\0') )
 	{
 		ptr = ::strstr( inStr, inDelim );
 		if ( ptr == nil )
@@ -619,7 +617,7 @@ tDirStatus dsBuildListFromPathAlloc ( tDirReference	inDirRef,
 		inStr += delimLen;
 	}
 
-	while ( !done && (tResult == eDSNoErr) && (*inStr != nil) )
+	while ( !done && (tResult == eDSNoErr) && (*inStr != '\0') )
 	{
 		ptr = ::strstr( inStr, inDelim );
 		if ( ptr == nil )
@@ -1949,3 +1947,69 @@ tDirStatus dsVerifyDataListPriv ( const tDataList *inDataList )
 	// Probably should have a custom error for this condition.
 	return eDSInvalidBuffFormat;
 } // dsVerifyDataListPriv
+
+
+// ---------------------------------------------------------------------------
+//	* dsParseAuthAuthority
+//    retrieve version, tag, and data from authauthority
+//    format is version;tag;data
+// ---------------------------------------------------------------------------
+
+tDirStatus dsParseAuthAuthority( const char *inAuthAuthority, char **outVersion, char **outAuthTag, char **outAuthData )
+{
+	char* authAuthority = NULL;
+	char* current = NULL;
+	char* tempPtr = NULL;
+	tDirStatus result = eDSAuthFailed;
+	
+	if ( inAuthAuthority == NULL || outVersion == NULL 
+		 || outAuthTag == NULL || outAuthData == NULL )
+	{
+		return eDSAuthFailed;
+	}
+	authAuthority = strdup(inAuthAuthority);
+	if (authAuthority == NULL)
+	{
+		return eDSAuthFailed;
+	}
+	current = authAuthority;
+	do {
+		tempPtr = strsep(&current, ";");
+		if (tempPtr == NULL) break;
+		*outVersion = strdup(tempPtr);
+		
+		tempPtr = strsep(&current, ";");
+		if (tempPtr == NULL) break;
+		*outAuthTag = strdup(tempPtr);
+		
+		tempPtr = strsep(&current, ";");
+		if (tempPtr == NULL) break;
+		*outAuthData = strdup(tempPtr);
+		
+		result = eDSNoErr;
+	} while (false);
+	
+	free(authAuthority);
+	authAuthority = NULL;
+	
+	if (result != eDSNoErr)
+	{
+		if (*outVersion != NULL)
+		{
+			free(*outVersion);
+			*outVersion = NULL;
+		}
+		if (*outAuthTag != NULL)
+		{
+			free(*outAuthTag);
+			*outAuthTag = NULL;
+		}
+		if (*outAuthData != NULL)
+		{
+			free(*outAuthData);
+			*outAuthData = NULL;
+		}
+	}
+	return result;
+} // dsParseAuthAuthority
+

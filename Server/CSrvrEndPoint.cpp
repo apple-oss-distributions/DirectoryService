@@ -3,8 +3,6 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -173,10 +171,11 @@ void * CSrvrEndPoint::GetClientMessage ( void )
 			break;
 		}
 		::memset( &msg, 0, sizeof( sIPCMsg ) );
+		
+		result = ::mach_msg( (mach_msg_header_t *)&msg, MACH_RCV_MSG | MACH_RCV_TRAILER_ELEMENTS(MACH_RCV_TRAILER_AUDIT) | MACH_RCV_TRAILER_TYPE(MACH_MSG_TRAILER_FORMAT_0), 0, kIPCMsgSize, fServerPort, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL );
 
-		result = ::mach_msg( (mach_msg_header_t *)&msg, MACH_RCV_MSG, 0, kIPCMsgSize, fServerPort, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL );
 		if ( (	result == MACH_MSG_SUCCESS )
-				&& (msg.fHeader.msgh_size == (kIPCMsgSize - sizeof( mach_msg_security_trailer_t ))) )
+				&& (msg.fHeader.msgh_size == (kIPCMsgSize - sizeof( mach_msg_audit_trailer_t ))) )
 				//&& (msg.fHeader.msgh_bits == MACH_MSGH_BITS( MACH_MSG_TYPE_COPY_SEND, MACH_MSG_TYPE_MAKE_SEND ) ) )
 		{
 			AddDataToMessage( &msg );
@@ -213,7 +212,7 @@ sInt32 CSrvrEndPoint::SendClientReply ( void *inMsg )
 	sIPCMsg				msg;
 
 	msg.fHeader.msgh_bits			= MACH_MSGH_BITS( MACH_MSG_TYPE_COPY_SEND, 0 );
-	msg.fHeader.msgh_size			= kIPCMsgSize - sizeof( mach_msg_security_trailer_t );
+	msg.fHeader.msgh_size			= kIPCMsgSize - sizeof( mach_msg_audit_trailer_t );
 	msg.fHeader.msgh_id				= pData->head.msgh_id;
 	msg.fHeader.msgh_remote_port	= pData->head.msgh_remote_port;
 	msg.fHeader.msgh_local_port		= MACH_PORT_NULL;
@@ -305,7 +304,8 @@ sComData* CSrvrEndPoint::MakeNewMsgPtr ( sIPCMsg *inMsg )
 	pOutMsg->head.msgh_reserved		 = inMsg->fHeader.msgh_reserved;
 	pOutMsg->head.msgh_id			 = inMsg->fHeader.msgh_id;
 	pOutMsg->type.msgt_name			 = inMsg->fMsgType;
-
+	pOutMsg->fTail					 = inMsg->fTail;
+	
 	pOutMsg->fMsgID		= inMsg->fMsgID;
 	pOutMsg->fPID		= inMsg->fPID;
 	pOutMsg->fPort		= inMsg->fHeader.msgh_remote_port;

@@ -3,8 +3,6 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -353,6 +351,16 @@ tDirStatus		dsGetRecordNameFromEntry	(	tRecordEntryPtr inRecEntryPtr, char **out
  * 		the resulting string.
  */
 tDirStatus		dsGetRecordTypeFromEntry	(	tRecordEntryPtr inRecEntryPtr, char **outRecType );
+
+/*!
+ * @function dsParseAuthAuthority
+ * Pass in a complete authentication authority attribute
+ * format is version;tag;data
+ * retrieve version, tag, and data as separate strings
+ * Memory for the char** parameters is the responsibility of the client
+ * and can be cleaned up using free().
+ */
+tDirStatus dsParseAuthAuthority( const char *inAuthAuthority, char **outVersion, char **outAuthTag, char **outAuthData );
 
 #ifdef __cplusplus
 }
