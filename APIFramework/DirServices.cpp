@@ -3,19 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -215,6 +218,7 @@ tDirStatus dsOpenDirServiceProxy (	tDirReference	   *outDirRef,
 	uInt32			messageIndex= 0;
 	uInt32			tableIndex	= 0;
 	tDataBufferPtr	versBuff	= nil;
+	uInt32			serverVersion = 0;
 
 	try
 	{
@@ -370,6 +374,11 @@ tDirStatus dsOpenDirServiceProxy (	tDirReference	   *outDirRef,
 		siStatus = gMessageTable[messageIndex]->Get_Value_FromMsg( (uInt32 *)&outResult, kResult );
 		LogThenThrowIfDSErrorMacro( outResult );
 
+		// Get the server DSProxy version if it exists
+		siStatus = gMessageTable[messageIndex]->Get_Value_FromMsg( (uInt32 *)&serverVersion, kNodeCount );
+		siStatus = eDSNoErr;
+		gMessageTable[messageIndex]->SetServerVersion(serverVersion);
+
 		if ( outDirRef != nil )
 		{
 			tDirNodeReference	aRef = 0;
@@ -442,10 +451,10 @@ tDirStatus dsCloseDirService ( tDirReference inDirRef )
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirRef,eDirectoryRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 		LogThenThrowIfTrueMacro(gProcessPID != getpid(), eDSInvalidSession);
 
 		gMessageTable[messageIndex]->Lock();
@@ -553,10 +562,10 @@ tDirStatus dsAddChildPIDToReference ( tDirReference inDirRef, long inValidChildP
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirRef, eDirectoryRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -621,10 +630,6 @@ tDirStatus dsAddChildPIDToReference ( tDirReference inDirRef, long inValidChildP
 tDirStatus dsIsDirServiceRunning ( )
 {
 	tDirStatus			outResult	= eServerNotRunning;
-//	register size_t		i ;
-//	register pid_t 		pidLast = -1 ;
-//	int					mib [] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0 };
-//	size_t				ulSize = 0;
 	kern_return_t		machErr			= 0;
 	mach_port_t			aPort			= 0;
 	mach_port_t			bPort			= 0;
@@ -634,7 +639,7 @@ tDirStatus dsIsDirServiceRunning ( )
 	if ( machErr == 0 )
 	{
 		// If we can lookup the port with the DirectoryService name, then DirectoryService is already running
-		machErr = bootstrap_look_up( aPort, (char *)"DirectoryService", &bPort );
+		machErr = bootstrap_look_up( aPort, kDSServiceName, &bPort );
 		if ( machErr == 0 )
 		{
 			outResult = eDSNoErr;
@@ -642,65 +647,6 @@ tDirStatus dsIsDirServiceRunning ( )
 	}
 
 	return( outResult );
-
-/***
-	// Allocate space for complete process list.
-	if ( 0 > std::sysctl( mib, 4, NULL, &ulSize, NULL, 0) )
-	{
-		return outResult;
-	}
-
-	i = ulSize / sizeof (struct kinfo_proc);
-	struct kinfo_proc	*kpspArray = new kinfo_proc[ i ];
-	if (!kpspArray)
-	{
-		return outResult;
-	}
-
-	// Get the proc list.
-	ulSize = i * sizeof (struct kinfo_proc);
-	if ( 0 > std::sysctl( mib, 4, kpspArray, &ulSize, NULL, 0 ) )
-	{
-		delete [] kpspArray;
-		return( outResult );
-	}
-
-	register struct kinfo_proc	*kpsp = kpspArray;
-	register pid_t 				pidParent = -1, pidProcGroup = -1;
-
-	for ( ; i-- ; kpsp++ )
-	{
-		if ( std::strcmp( kpsp->kp_proc.p_comm, "DirectoryService" ) )
-		{
-			continue;
-		}
-
-		// skip our id
-		if ( kpsp->kp_proc.p_pid == ::getpid() )
-		{
-			continue;
-		}
-
-		register pid_t	pidTemp = kpsp->kp_proc.p_pid;
-		if ( pidLast != -1 )
-		{
-			// Try to apply some logic to figure out the "best" pid to choose,
-			// namely the process group leader or top-most parent.
-			if ( (pidTemp != pidParent) && (pidTemp != pidProcGroup) )
-			{
-				continue;
-			}
-		}
-
-		pidLast = pidTemp;
-		outResult = eDSNoErr;
-		pidParent = kpsp->kp_eproc.e_ppid;
-		pidProcGroup = kpsp->kp_eproc.e_pgid;
-	}
-
-	delete [] kpspArray;
-
-***/
 
 } // dsIsDirServiceRunning
 
@@ -725,10 +671,10 @@ tDirStatus dsGetDirNodeCount ( tDirReference inDirRef, uInt32 *outNodeCount )
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirRef, eDirectoryRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -806,10 +752,10 @@ tDirStatus dsGetDirNodeCountWithInfo ( tDirReference inDirRef, uInt32 *outNodeCo
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirRef, eDirectoryRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -902,10 +848,10 @@ tDirStatus dsGetDirNodeList (	tDirReference	inDirRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirRef, eDirectoryRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -1010,10 +956,10 @@ tDirStatus dsReleaseContinueData (	tDirReference	inDirReference,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirReference, eDirectoryRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -1106,10 +1052,10 @@ tDirStatus dsFindDirNodes (	tDirReference		inDirRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirRef, eDirectoryRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -1285,10 +1231,10 @@ tDirStatus dsOpenDirNode (	tDirReference		inDirRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirRef, eDirectoryRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -1381,10 +1327,10 @@ tDirStatus dsCloseDirNode ( tDirNodeReference inNodeRef )
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -1469,13 +1415,14 @@ tDirStatus dsGetDirNodeInfo (	tDirNodeReference	inNodeRef,				// Node ref
 	tDirStatus			outResult	= eDSNoErr;
 	sInt32				siStatus	= eDSNoErr;
 	uInt32				messageIndex= 0;
+	char			   *ipString	= nil;
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -1487,74 +1434,100 @@ tDirStatus dsGetDirNodeInfo (	tDirNodeReference	inNodeRef,				// Node ref
 
 		outResult = VerifyTNodeList( inDirNodeInfoTypeList, eDSNullNodeInfoTypeList, eDSEmptyNodeInfoTypeList );
 		LogThenThrowIfDSErrorMacro( outResult );
-
-		// Add the node reference
-		siStatus = gMessageTable[messageIndex]->Add_Value_ToMsg( gFWRefMap->GetRefNum(inNodeRef, eNodeRefType, gProcessPID), ktNodeRef );
-		LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError );
-
-		// Add the return buffer length
-		siStatus = gMessageTable[messageIndex]->Add_Value_ToMsg( outDataBuff->fBufferSize, kOutBuffLen );
-		LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError - 1 );
-
-		// Add the Requested info list
-		siStatus = gMessageTable[messageIndex]->Add_tDataList_ToMsg( inDirNodeInfoTypeList, kNodeInfoTypeList );
-		LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError - 2 );
-
-		// Add the Attribute only boolean
-		siStatus = gMessageTable[messageIndex]->Add_Value_ToMsg( inAttrInfoOnly, kAttrInfoOnly );
-		LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError - 3 );
-
-		if ( ioContinueData != nil )
+		
+		ipString = dsGetPathFromList( 0, (const tDataList *)inDirNodeInfoTypeList, (char *)"/" );
+		if ( (ipString != nil) && (strcmp(ipString, "/dsAttrTypeStandard:ProxyIPAddress") == 0) )
 		{
-			// Add the context data
-			siStatus = gMessageTable[messageIndex]->Add_Value_ToMsg( (uInt32)*ioContinueData, kContextData );
-			LogThenThrowThisIfDSErrorMacro( siStatus, eParameterReceiveError - 4 );
-		}
-
-		// **************** Send the message ****************
-		siStatus = gMessageTable[messageIndex]->SendInlineMessage( kGetDirNodeInfo );
-		LogThenThrowIfDSErrorMacro( siStatus );
-
-		// **************** Get the reply ****************
-		siStatus = gMessageTable[messageIndex]->GetReplyMessage();
-		LogThenThrowIfDSErrorMacro( siStatus );
-
-		// Get the return result
-		siStatus = gMessageTable[messageIndex]->Get_Value_FromMsg( (uInt32 *)&outResult, kResult );
-		LogThenThrowIfDSErrorMacro( outResult );
-
-		// Get the data buffer 
-		siStatus = gMessageTable[messageIndex]->Get_tDataBuff_FromMsg( &outDataBuff, ktDataBuff );
-		LogThenThrowThisIfDSErrorMacro( siStatus, eDataReceiveErr_NoDataBuff );
-
-		if ( outAttrInfoCount != nil )
-		{
-			// Get the attribute info count
-			siStatus = gMessageTable[messageIndex]->Get_Value_FromMsg( outAttrInfoCount, kAttrInfoCount );
-			LogThenThrowThisIfDSErrorMacro( siStatus, eDataReceiveErr_NoAttrCount );
-		}
-
-		if ( outAttrListRef != nil )
-		{
-			tAttributeListRef	aRef = 0;
-			// Get the attribute list ref
-			siStatus = gMessageTable[messageIndex]->Get_Value_FromMsg( &aRef, ktAttrListRef );
-			LogThenThrowThisIfDSErrorMacro( siStatus, eDataReceiveErr_NoAttrListRef );
-			if (messageIndex != 0)
+			free(ipString);
+			ipString = nil;
+			
+			//call the routine to get the Proxy ip address using the gMessageTable
+			const char* ipAddrStr = gMessageTable[messageIndex]->GetProxyIPAddress();
+			LogThenThrowIfNilMacro( ipAddrStr, eDSUnknownHost );
+			
+			//build the response
+			*outAttrListRef = 0;
+			if ( outDataBuff->fBufferSize > (1 + strlen(ipAddrStr)) )
 			{
-				CDSRefMap::NewAttrListRefMap( outAttrListRef, inNodeRef, gProcessPID, aRef, messageIndex );
-			}
-			else
-			{
-				*outAttrListRef = aRef;
+				outDataBuff->fBufferLength = 1 + strlen(ipAddrStr);
+				strcpy(outDataBuff->fBufferData, ipAddrStr);
 			}
 		}
-
-		if ( ioContinueData != nil )
+		else
 		{
-			// Get the context data
-			siStatus = gMessageTable[messageIndex]->Get_Value_FromMsg( (uInt32 *)ioContinueData, kContextData );
-			LogThenThrowThisIfDSErrorMacro( siStatus, eDataReceiveErr_NoContinueData );
+			if ( ipString != nil )
+			{
+				free(ipString);
+				ipString = nil;
+			}
+			// Add the node reference
+			siStatus = gMessageTable[messageIndex]->Add_Value_ToMsg( gFWRefMap->GetRefNum(inNodeRef, eNodeRefType, gProcessPID), ktNodeRef );
+			LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError );
+	
+			// Add the return buffer length
+			siStatus = gMessageTable[messageIndex]->Add_Value_ToMsg( outDataBuff->fBufferSize, kOutBuffLen );
+			LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError - 1 );
+	
+			// Add the Requested info list
+			siStatus = gMessageTable[messageIndex]->Add_tDataList_ToMsg( inDirNodeInfoTypeList, kNodeInfoTypeList );
+			LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError - 2 );
+	
+			// Add the Attribute only boolean
+			siStatus = gMessageTable[messageIndex]->Add_Value_ToMsg( inAttrInfoOnly, kAttrInfoOnly );
+			LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError - 3 );
+	
+			if ( ioContinueData != nil )
+			{
+				// Add the context data
+				siStatus = gMessageTable[messageIndex]->Add_Value_ToMsg( (uInt32)*ioContinueData, kContextData );
+				LogThenThrowThisIfDSErrorMacro( siStatus, eParameterReceiveError - 4 );
+			}
+	
+			// **************** Send the message ****************
+			siStatus = gMessageTable[messageIndex]->SendInlineMessage( kGetDirNodeInfo );
+			LogThenThrowIfDSErrorMacro( siStatus );
+	
+			// **************** Get the reply ****************
+			siStatus = gMessageTable[messageIndex]->GetReplyMessage();
+			LogThenThrowIfDSErrorMacro( siStatus );
+	
+			// Get the return result
+			siStatus = gMessageTable[messageIndex]->Get_Value_FromMsg( (uInt32 *)&outResult, kResult );
+			LogThenThrowIfDSErrorMacro( outResult );
+	
+			// Get the data buffer 
+			siStatus = gMessageTable[messageIndex]->Get_tDataBuff_FromMsg( &outDataBuff, ktDataBuff );
+			LogThenThrowThisIfDSErrorMacro( siStatus, eDataReceiveErr_NoDataBuff );
+	
+			if ( outAttrInfoCount != nil )
+			{
+				// Get the attribute info count
+				siStatus = gMessageTable[messageIndex]->Get_Value_FromMsg( outAttrInfoCount, kAttrInfoCount );
+				LogThenThrowThisIfDSErrorMacro( siStatus, eDataReceiveErr_NoAttrCount );
+			}
+	
+			if ( outAttrListRef != nil )
+			{
+				tAttributeListRef	aRef = 0;
+				// Get the attribute list ref
+				siStatus = gMessageTable[messageIndex]->Get_Value_FromMsg( &aRef, ktAttrListRef );
+				LogThenThrowThisIfDSErrorMacro( siStatus, eDataReceiveErr_NoAttrListRef );
+				if (messageIndex != 0)
+				{
+					CDSRefMap::NewAttrListRefMap( outAttrListRef, inNodeRef, gProcessPID, aRef, messageIndex );
+				}
+				else
+				{
+					*outAttrListRef = aRef;
+				}
+			}
+	
+			if ( ioContinueData != nil )
+			{
+				// Get the context data
+				siStatus = gMessageTable[messageIndex]->Get_Value_FromMsg( (uInt32 *)ioContinueData, kContextData );
+				LogThenThrowThisIfDSErrorMacro( siStatus, eDataReceiveErr_NoContinueData );
+			}
 		}
 
 		gMessageTable[messageIndex]->Unlock();
@@ -1624,13 +1597,14 @@ tDirStatus dsGetRecordList (	tDirNodeReference	inNodeRef,				// Node ref
 	tDirStatus		outResult	= eDSNoErr;
 	sInt32			siStatus	= eDSNoErr;
 	uInt32			messageIndex= 0;
+	uInt32			serverVersion = 0;
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -1654,7 +1628,16 @@ tDirStatus dsGetRecordList (	tDirNodeReference	inNodeRef,				// Node ref
 		LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError );
 
 		// Add the data buffer
-		siStatus = gMessageTable[messageIndex]->Add_tDataBuff_ToMsg( inOutDataBuff, ktDataBuff );
+		//don't need to send this empty buffer to the server at all ie. do just like dsDoAttributeValueSearch for version 1 or above
+		serverVersion = gMessageTable[messageIndex]->GetServerVersion();
+		if (serverVersion > 0)
+		{
+			siStatus = gMessageTable[messageIndex]->Add_Value_ToMsg( inOutDataBuff->fBufferSize, kOutBuffLen );
+		}
+		else
+		{
+			siStatus = gMessageTable[messageIndex]->Add_tDataBuff_ToMsg( inOutDataBuff, ktDataBuff );
+		}
 		LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError - 1 );
 
 		// Add the Record Name list
@@ -1799,10 +1782,10 @@ tDirStatus dsGetRecordEntry	(	tDirNodeReference	inNodeRef,
             return( outResult );
         }
         
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -1921,10 +1904,10 @@ tDirStatus dsGetAttributeEntry (	tDirNodeReference		inNodeRef,					// Node ref <
             return( outResult );
         }
         
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2046,10 +2029,10 @@ tDirStatus dsGetAttributeValue (	tDirNodeReference		 inNodeRef,
             return( outResult );
         }
         
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2152,10 +2135,10 @@ tDirStatus dsCloseAttributeList ( tAttributeListRef inAttributeListRef )
             return( outResult );
         }
         
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inAttributeListRef,eAttrListRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2234,10 +2217,10 @@ tDirStatus dsCloseAttributeValueList ( tAttributeValueListRef inAttributeValueLi
             return( outResult );
         }
         
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inAttributeValueListRef,eAttrValueListRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2309,10 +2292,10 @@ tDirStatus dsOpenRecord (	tDirNodeReference	inNodeRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2413,10 +2396,10 @@ tDirStatus dsGetRecordReferenceInfo (	tRecordReference	inRecRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2492,10 +2475,10 @@ tDirStatus dsGetRecordAttributeInfo (	tRecordReference	inRecRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2579,10 +2562,10 @@ tDirStatus dsGetRecordAttributeValueByID (	tRecordReference		inRecRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2669,10 +2652,10 @@ tDirStatus dsGetRecordAttributeValueByIndex (	tRecordReference		inRecRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2757,10 +2740,10 @@ tDirStatus dsFlushRecord ( tRecordReference inRecRef )
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2829,10 +2812,10 @@ tDirStatus dsCloseRecord ( tRecordReference inRecRef )
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2902,10 +2885,10 @@ tDirStatus dsSetRecordName (	tRecordReference	inRecRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -2979,10 +2962,10 @@ tDirStatus dsSetRecordType ( tRecordReference inRecRef, tDataNodePtr inNewRecord
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -3056,10 +3039,10 @@ tDirStatus dsDeleteRecord ( tRecordReference inRecRef )
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -3130,10 +3113,10 @@ tDirStatus dsCreateRecord (	tDirNodeReference	inNodeRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -3222,10 +3205,10 @@ tDirStatus dsCreateRecordAndOpen (	tDirNodeReference	inNodeRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -3331,10 +3314,10 @@ tDirStatus dsAddAttribute (	tRecordReference		inRecRef,
 //tAccessControlEntryPtr	inNewAttrAccess NOT USED
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -3422,10 +3405,10 @@ tDirStatus dsRemoveAttribute (	tRecordReference	inRecRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -3501,10 +3484,10 @@ tDirStatus dsAddAttributeValue (	tRecordReference	inRecRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -3586,10 +3569,10 @@ tDirStatus	dsRemoveAttributeValue	(	tRecordReference	inRecRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -3669,10 +3652,10 @@ tDirStatus dsSetAttributeValue (	tRecordReference		inRecRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inRecRef,eRecordRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -3752,15 +3735,48 @@ tDirStatus dsDoDirNodeAuth (	tDirNodeReference	inNodeRef,
 								tContextData		*ioContinueData )
 {
 	tDirStatus		outResult	= eDSNoErr;
+
+	outResult = dsDoDirNodeAuthOnRecordType(	inNodeRef,
+												inAuthMethod,
+												inDirNodeAuthOnlyFlag,
+												inAuthStepData,
+												outAuthStepDataResponse,
+												ioContinueData,
+												nil);
+	//record type passed in as nil to be backward compatible
+	return( outResult );
+
+} // dsDoDirNodeAuth
+
+
+//--------------------------------------------------------------------------------------------------
+//
+//	Name:	dsDoDirNodeAuthOnRecordType
+//
+//	Params:	
+//
+//	Notes: 
+//
+//--------------------------------------------------------------------------------------------------
+
+tDirStatus dsDoDirNodeAuthOnRecordType (	tDirNodeReference	inNodeRef,
+											tDataNodePtr		inAuthMethod,
+											dsBool				inDirNodeAuthOnlyFlag,
+											tDataBufferPtr		inAuthStepData,
+											tDataBufferPtr		outAuthStepDataResponse,
+											tContextData		*ioContinueData,
+											tDataNodePtr		inRecordType )
+{
+	tDirStatus		outResult	= eDSNoErr;
 	sInt32			siStatus	= eDSNoErr;
 	uInt32			messageIndex= 0;
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -3805,8 +3821,26 @@ tDirStatus dsDoDirNodeAuth (	tDirNodeReference	inNodeRef,
 			LogThenThrowThisIfDSErrorMacro( siStatus, eParameterReceiveError - 5 );
 		}
 
+		if (inRecordType != nil)
+		{
+			// Make sure we have a non-null data buffer - partially redundant check
+			outResult = VerifyTDataBuff( inRecordType, eDSNullRecType, eDSEmptyRecordType );
+			LogThenThrowIfDSErrorMacro( outResult );
+			// Add the Record Type
+			siStatus = gMessageTable[messageIndex]->Add_tDataBuff_ToMsg( inRecordType, kRecTypeBuff );
+			LogThenThrowThisIfDSErrorMacro( siStatus, eParameterSendError - 6 );
+		}
+
 		// **************** Send the message ****************
-		siStatus = gMessageTable[messageIndex]->SendInlineMessage( kDoDirNodeAuth );
+		if (inRecordType == nil)
+		{
+			//backward compatible with dsDoDirNodeAuth call
+			siStatus = gMessageTable[messageIndex]->SendInlineMessage( kDoDirNodeAuth );
+		}
+		else
+		{
+			siStatus = gMessageTable[messageIndex]->SendInlineMessage( kDoDirNodeAuthOnRecordType );
+		}
 		LogThenThrowIfDSErrorMacro( siStatus );
 
 		// **************** Get the reply ****************
@@ -3854,7 +3888,7 @@ tDirStatus dsDoDirNodeAuth (	tDirNodeReference	inNodeRef,
 	CheckToCleanUpLostTCPConnection(&outResult, messageIndex, __LINE__);
 	return( outResult );
 
-} // dsDoDirNodeAuth
+} // dsDoDirNodeAuthOnRecordType
 
 
 //--------------------------------------------------------------------------------------------------
@@ -3892,10 +3926,10 @@ tDirStatus dsDoAttributeValueSearch (	tDirNodeReference	inDirNodeRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -4051,10 +4085,10 @@ tDirStatus dsDoAttributeValueSearchWithData (	tDirNodeReference	inDirNodeRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -4207,10 +4241,10 @@ tDirStatus	dsDoPlugInCustomCall (	tDirNodeReference	inNodeRef,
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inNodeRef, eNodeRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
@@ -4308,13 +4342,17 @@ tDirStatus dsVerifyDirRefNum ( tDirReference inDirRef )
 	{
 		return( outResult );
 	}
+	if ( inDirRef == 0x0 )
+	{
+		return( eDSInvalidReference );
+	}
 
 	try
 	{
-		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableError );
+		LogThenThrowIfNilMacro( gFWRefMap, eDSRefTableNilError );
 		messageIndex = gFWRefMap->GetMessageTableIndex(inDirRef, eDirectoryRefType, gProcessPID);
-		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableError );
-		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableError );
+		LogThenThrowIfTrueMacro( messageIndex > gMaxEndpoints, eDSRefTableIndexOutOfBoundsError );
+		LogThenThrowIfNilMacro( gMessageTable[messageIndex], eDSRefTableEntryNilError );
 
 		gMessageTable[messageIndex]->Lock();
 
