@@ -20,6 +20,8 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
+#if !defined(DISABLE_SEARCH_PLUGIN) || !defined(DISABLE_MEMBERSHIP_CACHE)
+
 #include "Mbrd_UserGroup.h"
 
 #include <mach/mach_time.h>
@@ -431,3 +433,5 @@ int UserGroup_GetGroups( UserGroup* user, gid_t** gidArray )
 	
 	return itemArrayCount;
 }
+
+#endif // DISABLE_SEARCH_PLUGIN

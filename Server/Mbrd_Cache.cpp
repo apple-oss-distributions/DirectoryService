@@ -20,6 +20,8 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
+#if !defined(DISABLE_SEARCH_PLUGIN) || !defined(DISABLE_MEMBERSHIP_CACHE)
+
 #include "Mbrd_Cache.h"
 #include "CPlugInList.h"
 
@@ -877,3 +879,5 @@ int32_t MbrdCache_KerberosFallback( MbrdCache *cache )
 {
 	return cache->fKerberosFallback;
 }
+
+#endif // DISABLE_SEARCH_PLUGIN

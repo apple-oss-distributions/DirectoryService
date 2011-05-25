@@ -20,6 +20,8 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
+#if !defined(DISABLE_SEARCH_PLUGIN) || !defined(DISABLE_MEMBERSHIP_CACHE)
+
 #include "Mbrd_MembershipResolver.h"
 #include "Mbrd_Cache.h"
 #include <sys/syslog.h>
@@ -43,7 +45,6 @@
 #include <gssapi/gssapi.h>
 #include "CInternalDispatch.h"
 #include "CPlugInList.h"
-#include "CCachePlugin.h"
 #include <map>
 #include <string>
 #include <membershipPriv.h>
@@ -126,6 +127,7 @@ static pthread_mutex_t			sidMapLock = PTHREAD_MUTEX_INITIALIZER;	// waiting for 
 static dispatch_queue_t			gLookupQueue = NULL;
 static pthread_key_t			gMembershipThreadKey = NULL;
 
+#ifndef DISABLE_CACHE_PLUGIN
 extern CCachePlugin				*gCacheNode;
 
 extern sCacheValidation* ParsePasswdEntry( tDirReference inDirRef, tDirNodeReference inNodeRef, kvbuf_t *inBuffer, tDataBufferPtr inDataBuffer, 
@@ -134,6 +136,7 @@ extern sCacheValidation* ParsePasswdEntry( tDirReference inDirRef, tDirNodeRefer
 extern sCacheValidation* ParseGroupEntry( tDirReference inDirRef, tDirNodeReference inNodeRef, kvbuf_t *inBuffer, tDataBufferPtr inDataBuffer, 
 										  tRecordEntryPtr inRecEntry, tAttributeListRef inAttrListRef, void *additionalInfo, CCache *inCache, 
 										  const char **inKeys );
+#endif
 
 #pragma mark -
 #pragma mark Internal Routines
@@ -655,6 +658,7 @@ UserGroup **Mbrd_FindItemsAndRetain( tDirNodeReference dirNode, tDataListPtr rec
 	uint64_t *statTime = &gStatBlock.fAverageuSecPerRecordLookup;
 	uint64_t *statCount = &gStatBlock.fTotalRecordLookups;
 	const char *attribute = NULL;
+	tDirPatternMatch match = eDSExact;
 	
 	switch ( idType )
 	{
@@ -707,6 +711,7 @@ UserGroup **Mbrd_FindItemsAndRetain( tDirNodeReference dirNode, tDataListPtr rec
 		case ID_TYPE_GUID:
 			attribute = kDS1AttrGeneratedUID;
 			foundBy = kUGFoundByGUID;
+			match = eDSiExact;
 			break;
 			
 		case ID_TYPE_GROUPMEMBERS:
@@ -740,7 +745,7 @@ UserGroup **Mbrd_FindItemsAndRetain( tDirNodeReference dirNode, tDataListPtr rec
 		do {
 			count = (*recCount);
 			status = dsDoAttributeValueSearchWithData(dirNode, searchBuffer, recType,
-													  attrType, eDSExact, lookUpPtr, gAttrsToGet, 0,
+													  attrType, match, lookUpPtr, gAttrsToGet, 0,
 													  &count, &localContext);
 			if (status == eDSBufferTooSmall) {
 				buffSize *= 2;
@@ -799,6 +804,7 @@ UserGroup **Mbrd_FindItemsAndRetain( tDirNodeReference dirNode, tDataListPtr rec
 				{
 					result = UserGroup_Create();
 					if ( strcmp(recTypeStr, kDSStdRecordTypeUsers) == 0 ) {
+#ifndef DISABLE_CACHE_PLUGIN
 						const char	*keys[] = { "pw_name", "pw_uid", "pw_gecos", NULL }; // "pw_uuid"
 						sCacheValidation *valid;
 						
@@ -809,6 +815,7 @@ UserGroup **Mbrd_FindItemsAndRetain( tDirNodeReference dirNode, tDataListPtr rec
 													  gCacheNode->fLibinfoCache, keys );
 							DSRelease( valid );
 						}
+#endif
 					}
 					else if ( strcmp(recTypeStr, kDSStdRecordTypeComputers) == 0 ) {
 						result->fRecordType = kUGRecordTypeComputer;
@@ -817,6 +824,7 @@ UserGroup **Mbrd_FindItemsAndRetain( tDirNodeReference dirNode, tDataListPtr rec
 						result->fRecordType = kUGRecordTypeComputerGroup;
 					}
 					else {
+#ifndef DISABLE_CACHE_PLUGIN
 						const char	*keys[] = { "gr_name", "gr_gid", "gr_uuid", NULL };
 						sCacheValidation *valid;
 						
@@ -827,6 +835,7 @@ UserGroup **Mbrd_FindItemsAndRetain( tDirNodeReference dirNode, tDataListPtr rec
 													 NULL, gCacheNode->fLibinfoCache, keys );
 							DSRelease( valid );
 						}
+#endif
 					}
 					
 					result->fFoundBy = foundBy;
@@ -1594,7 +1603,7 @@ static void Mbrd_ResolveGroupsForItem( UserGroup *item, uint32_t flags, UserGrou
 	uuid_unparse_upper( item->fGUID, guidString );
 	
 	// WARNING: do not use fQueue as refreshes are initiated on this queue to prevent collisions
-	dispatch_queue_t dispatchQueue = dispatch_get_concurrent_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT );
+	dispatch_queue_t dispatchQueue = dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_DEFAULT, 0 );
 	dispatch_group_t dispatchGroup = dispatch_group_create();
 	
 	void (^addToHashesAndRelease)(UserGroup *, UserGroup *, UserGroup *) = ^(UserGroup *userItem, UserGroup *memberItem, UserGroup *groupItem) {
@@ -2448,7 +2457,7 @@ void Mbrd_ProcessLookup(struct kauth_identity_extlookup* request)
 	request->el_result = KAUTH_EXTLOOKUP_SUCCESS;
 }
 
-void Mbrd_SweepCache( void )
+void Mbrd_SweepCache( void *)
 {
 	dispatch_async( gLookupQueue,
 				    ^(void) {
@@ -2802,3 +2811,44 @@ bool dsIsUserMemberOfGroup( const char *inUsername, const char *inGroupName )
 	
 	return returnVal;
 }
+
+#else
+
+#include "Mbrd_MembershipResolver.h"
+#include <membership.h>
+#include <membershipPriv.h>
+#include "CSharedData.h"
+
+bool dsIsUserMemberOfGroup( const char *inUsername, const char *inGroupName )
+{
+	uuid_t uu;
+	uuid_t group;
+	int isMember;
+	
+	if (mbr_user_name_to_uuid(inUsername, uu) == 0) {
+		if (mbr_group_name_to_uuid(inGroupName, group) == 0) {
+			if (mbr_check_membership(uu, group, &isMember) == 0) {
+				return isMember != 0;
+			}
+		}
+	}
+	return false;
+}
+
+void dsFlushMembershipCache( void )
+{
+	mbr_reset_cache();
+}
+
+void dsSetNodeCacheAvailability( char *inNodeName, int inAvailable )
+{
+	
+}
+
+void dsFlushLibinfoCache( void )
+{
+	
+}
+
+
+#endif // DISABLE_SEARCH_PLUGIN
